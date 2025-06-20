@@ -113,3 +113,129 @@ async function removeTickerFromDB(ticker) {
         body: JSON.stringify({ symbol: ticker })
     });
 }
+
+function updateTickerDisplay() {
+    const container = document.getElementById("selected-stocks");
+    container.innerHTML = "";
+    selectedTickers.forEach(ticker => {
+        const span = document.createElement("span");
+        span.textContent = ticker;
+        span.style.cursor = "pointer";
+        span.onclick = () => showSummary(ticker);
+
+        const btn = document.createElement("button");
+        btn.textContent = "x";
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            removeTicker(ticker);
+        };
+        span.appendChild(btn);
+        container.appendChild(span);
+    });
+}
+
+async function showSummary(ticker) {
+    const res = await fetch("/get_summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: ticker })
+    });
+
+    const data = await res.json();
+    if (data.error) {
+        alert("Could not fetch summary.");
+        return;
+    }
+
+    document.getElementById("modalTitle").innerText = `${ticker} - ${data.name}`;
+    document.getElementById("modalIndustry").innerText = `Industry: ${data.industry}`;
+    document.getElementById("modalBody").innerText =
+        `${data.summary}\n\nAnalyst Recommendation: ${data.recommendation}`;
+
+    drawStockStatsCharts(data);
+    document.getElementById("summaryModal").style.display = "flex";
+}
+
+let currentChart;
+let chartDataGlobal = {};
+
+function drawChart(type) {
+  const ctx = document.getElementById("summaryChart").getContext("2d");
+  const data = chartDataGlobal;
+  const labels = Object.keys(data.revenue).map(date => new Date(date).getFullYear());
+  let datasetLabel = "", values = [], chartType = "bar", color = "#4e79a7", yLabel = "USD";
+
+  switch (type) {
+    case "revenue":
+      datasetLabel = "Revenue";
+      values = Object.values(data.revenue).map(v => v / 1e9);
+      yLabel = "Billions USD";
+      break;
+    case "eps":
+      datasetLabel = "Earnings Per Share";
+      values = Object.values(data.eps);
+      color = "#9c27b0";
+      break;
+    case "dividends":
+      datasetLabel = "Dividend per Share";
+      values = Object.values(data.dividends);
+      color = "#f28e2b";
+      break;
+    case "gross_margin":
+      datasetLabel = "Gross Margin (%)";
+      values = Object.values(data.gross_margin);
+      chartType = "line";
+      color = "#e15759";
+      yLabel = "%";
+      break;
+  }
+
+  // Destroy previous chart
+  if (currentChart) currentChart.destroy();
+
+  currentChart = new Chart(ctx, {
+    type: chartType,
+    data: {
+      labels,
+      datasets: [{
+        label: datasetLabel,
+        data: values,
+        backgroundColor: color,
+        borderColor: color,
+        fill: chartType !== "line",
+        tension: 0.2
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: yLabel }
+        }
+      }
+    }
+  });
+}
+
+function drawStockStatsCharts(data) {
+  chartDataGlobal = data; // Save for switching
+  drawChart("revenue");   // Initial chart
+
+  // Handle button clicks
+  document.querySelectorAll(".chart-btn").forEach(btn => {
+    btn.classList.remove("active");
+    if (btn.dataset.chart === "revenue") btn.classList.add("active"); // default
+
+    btn.onclick = () => {
+      document.querySelectorAll(".chart-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      drawChart(btn.dataset.chart);
+    };
+  });
+}
+
+
+function closeModal() {
+    document.getElementById('summaryModal').style.display = 'none';
+}

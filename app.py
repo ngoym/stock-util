@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 import yfinance as yf
 import sqlite3
 import os
+import pandas as pd
 
 app = Flask(__name__)
 DB_FILE = "tickers.db"
@@ -67,6 +68,57 @@ def get_stock_data():
             result[symbol] = None
 
     return jsonify(result)
+
+@app.route("/get_summary", methods=["POST"])
+def get_summary():
+    symbol = request.json.get("symbol", "")
+    try:
+        stock = yf.Ticker(symbol)
+        info = stock.info
+
+        summary_full = info.get("longBusinessSummary", "")
+        summary_sentences = ". ".join(summary_full.split(". ")[:2]) + "." if summary_full else "No summary available."
+        recommendation = info.get("recommendationKey", "N/A").capitalize()
+        #analyst_count = info.get("analystCount", 0)
+        #recommendation_pct = info.get("recommendation_pct", 0)
+
+        financials = stock.financials.T
+        dividends = stock.dividends
+
+        # Revenue
+        revenue = financials.get("Total Revenue", pd.Series()).dropna().tail(5)
+
+        # EPS (Diluted)
+        eps = financials.get("Diluted EPS", pd.Series()).dropna().tail(5)
+
+        # Dividends per year
+        dividends_yearly = dividends.resample('YE').sum().tail(5) if not dividends.empty else pd.Series()
+
+        # Gross Margin
+        gross_profit = financials.get("Gross Profit", pd.Series()).dropna().tail(5)
+        gross_margin = ((gross_profit / revenue) * 100).dropna() if not revenue.empty else pd.Series()
+
+        def safe_dict(series):
+            return {str(k): float(v) for k, v in series.items() if pd.notnull(v)}
+
+        result = {
+            "name": info.get("longName", symbol),
+            "industry": info.get("industry", "Unknown"),
+            "summary": summary_sentences,
+            "recommendation": recommendation,
+            #"recommendation_pct": recommendation_pct,
+            #"analyst_count": analyst_count,
+            "revenue": safe_dict(revenue),
+            "eps": safe_dict(eps),
+            "dividends": safe_dict(dividends_yearly),
+            "gross_margin": safe_dict(gross_margin)
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("Error fetching summary:", e)
+        return jsonify({"error": "Could not fetch summary."}), 500
 
 if __name__ == "__main__":
     init_db()
