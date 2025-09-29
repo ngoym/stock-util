@@ -33,9 +33,15 @@ function updateTickerDisplay() {
     selectedTickers.forEach(ticker => {
         const span = document.createElement("span");
         span.textContent = ticker;
+        span.style.cursor = "pointer";
+        span.onclick = () => showSummary(ticker);
+
         const btn = document.createElement("button");
         btn.textContent = "x";
-        btn.onclick = () => removeTicker(ticker);
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            removeTicker(ticker);
+        };
         span.appendChild(btn);
         container.appendChild(span);
     });
@@ -49,16 +55,40 @@ function selectPeriod(button, period) {
 }
 
 async function fetchData() {
-    if (selectedTickers.length === 0) return;
+    if (selectedTickers.length === 0) {
+        // Clear all charts if no tickers are selected
+        document.getElementById('stockChart').style.display = 'block';
+        if (window.barChart) window.barChart.destroy();
 
+        document.getElementById('priceTargetChart').style.display = 'none';
+        document.getElementById('priceTargetMessage').style.display = 'none';
+        if (window.priceTargetChart) window.priceTargetChart.destroy();
+
+        document.getElementById('epsGrowthChart').style.display = 'none';
+        document.getElementById('epsGrowthMessage').style.display = 'none';
+        if (window.epsGrowthChart) window.epsGrowthChart.destroy();
+        return;
+    }
+
+    // Fetch historical price change data
     const response = await fetch("/get_stock_data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbols: selectedTickers, period: currentPeriod })
     });
-
     const data = await response.json();
     drawBarChart(data);
+
+    // Fetch analysis data for the new charts
+    const analysisResponse = await fetch("/get_analysis_data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: selectedTickers })
+    });
+    const analysisData = await analysisResponse.json();
+    console.log(analysisData);
+    drawPriceTargetChart(analysisData.price_target_upside);
+    drawRevenueGrowthChart(analysisData.revenue_growth_next_year);
 }
 
 function drawBarChart(data) {
@@ -93,10 +123,123 @@ function drawBarChart(data) {
                         text: 'Change (%)'
                     }
                 }
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Stock Price Performance'
+                }
             }
         }
     });
 }
+
+function drawPriceTargetChart(data) {
+    const canvas = document.getElementById("priceTargetChart");
+    const messageEl = document.getElementById("priceTargetMessage");
+    const ctx = canvas.getContext("2d");
+
+    // Filter out nulls and sort by value (descending)
+    const entries = Object.entries(data)
+        .filter(([_, v]) => v !== null)
+        .sort((a, b) => b[1] - a[1]);
+    const labels = entries.map(([k, _]) => k);
+    const values = entries.map(([_, v]) => v);
+
+    // ✅ Safely destroy previous instance
+    if (window.priceTargetChart && typeof window.priceTargetChart.destroy === "function") {
+        window.priceTargetChart.destroy();
+    }
+
+    if (labels.length > 0) {
+        canvas.style.display = 'block';
+        //messageEl.style.display = 'none';
+
+        window.priceTargetChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: `Price Target Upside (%)`,
+                    data: values,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: { display: true, text: 'Upside (%)' }
+                    }
+                },
+                plugins: {
+                    title: { display: true, text: 'Analyst Price Target Upside' }
+                }
+            }
+        });
+    } else {
+        canvas.style.display = 'none';
+        messageEl.style.display = 'block';
+        messageEl.textContent = 'Analyst price target data is not available for the selected tickers.';
+    }
+}
+
+function drawRevenueGrowthChart(data) {
+    const canvas = document.getElementById("revenueGrowthChart");
+    const messageEl = document.getElementById("revenueGrowthMessage");
+    const ctx = canvas.getContext("2d");
+
+    // Filter out nulls and sort by value (descending)
+    const entries = Object.entries(data)
+        .filter(([_, v]) => v !== null)
+        .sort((a, b) => b[1] - a[1]);
+    const labels = entries.map(([k, _]) => k);
+    const values = entries.map(([_, v]) => v);
+
+    if (window.epsGrowthChart && typeof window.epsGrowthChart.destroy === "function") {
+        window.epsGrowthChart.destroy();
+    }
+
+    if (labels.length > 0) {
+        canvas.style.display = 'block';
+        //messageEl.style.display = 'none';
+
+        window.epsGrowthChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: `EPS Growth + Revenue Growth Next Year (%)`,
+                    data: values,
+                    backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                    borderColor: 'rgba(255, 159, 64, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: { display: true, text: 'Growth (%)' }
+                    }
+                },
+                plugins: {
+                    title: { display: true, text: 'Revenue Growth Next Year (est.)' }
+                }
+            }
+        });
+    } else {
+        canvas.style.display = 'none';
+        messageEl.style.display = 'block';
+        messageEl.textContent = 'Revenue growth estimate data is not available for the selected tickers.';
+    }
+}
+
+
 
 async function saveTickerToDB(ticker) {
     await fetch("/save_ticker", {
@@ -111,26 +254,6 @@ async function removeTickerFromDB(ticker) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: ticker })
-    });
-}
-
-function updateTickerDisplay() {
-    const container = document.getElementById("selected-stocks");
-    container.innerHTML = "";
-    selectedTickers.forEach(ticker => {
-        const span = document.createElement("span");
-        span.textContent = ticker;
-        span.style.cursor = "pointer";
-        span.onclick = () => showSummary(ticker);
-
-        const btn = document.createElement("button");
-        btn.textContent = "x";
-        btn.onclick = (e) => {
-            e.stopPropagation();
-            removeTicker(ticker);
-        };
-        span.appendChild(btn);
-        container.appendChild(span);
     });
 }
 
@@ -235,7 +358,7 @@ function drawStockStatsCharts(data) {
   });
 }
 
-
 function closeModal() {
     document.getElementById('summaryModal').style.display = 'none';
 }
+

@@ -17,6 +17,7 @@
         button:hover { background-color: #0056b3; }
         .time-buttons button { background-color: #e9ecef; color: #333; margin: 4px; }
         .time-buttons button.active { background-color: #007bff; color: white; }
+        .charts-container { margin-top: 2rem; }
         canvas.main-chart { background-color: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 1rem; margin-top: 2rem; }
         .chart-controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
         .chart-btn { padding: 6px 10px; font-size: 0.85rem; background-color: #e0e0e0; border: none; border-radius: 6px; cursor: pointer; }
@@ -24,6 +25,15 @@
         #summaryModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index:999; justify-content:center; align-items:flex-start; padding-top:30px; }
         #summaryModal .modal-content { background:white; border-radius:12px; padding:20px; max-width:800px; width:90%; position:relative; max-height:90vh; overflow-y:auto; }
         #summaryModal canvas { width:100% !important; height:300px !important; }
+        .no-data-message {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            padding: 2rem 1rem;
+            margin-top: 2rem;
+            text-align: center;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -37,7 +47,7 @@
     <div id="selected-stocks"></div>
 
     <div class="time-buttons" style="text-align:center; margin-top:20px;">
-        <button onclick="selectPeriod(this,'1d')">Today</button>
+        <button onclick="selectPeriod(this,'1d')" class="active">Today</button>
         <button onclick="selectPeriod(this,'5d')">5D</button>
         <button onclick="selectPeriod(this,'1mo')">1M</button>
         <button onclick="selectPeriod(this,'3mo')">3M</button>
@@ -46,7 +56,13 @@
         <button onclick="selectPeriod(this,'5y')">5Y</button>
     </div>
 
-    <canvas id="stockChart" class="main-chart" width="1000" height="400"></canvas>
+    <div class="charts-container">
+        <canvas id="stockChart" class="main-chart" width="1000" height="400"></canvas>
+
+        <canvas id="priceTargetChart" class="main-chart" width="1000" height="400"></canvas>
+
+        <canvas id="revenueGrowthChart" class="main-chart" width="1000" height="400"></canvas>
+    </div>
 
     <!-- Summary Modal -->
     <div id="summaryModal">
@@ -69,3 +85,4 @@
     <script src="/static/script.js"></script>
 </body>
 </html>
+
