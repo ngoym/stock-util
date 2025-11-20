@@ -70,52 +70,68 @@ def get_stock_data():
     return jsonify(result)
 
 @app.route("/get_analysis_data", methods=["POST"])
+@app.route("/get_analysis_data", methods=["POST"])
 def get_analysis_data():
     data = request.get_json()
     symbols = data.get("symbols", [])
-    print(symbols)
+
     price_target_data = {}
     revenue_growth_data = {}
+    sectors = {}   # ← NEW: store sector for each ticker
 
     for symbol in symbols:
         try:
             stock = yf.Ticker(symbol)
             info = stock.info
-            # price target upside
+
+            # Save the sector info
+            sector = info.get("sector", "Other")
+            sectors[symbol] = sector
+
+            # Price target upside
             target_price = stock.analyst_price_targets['mean']
             current_price = stock.analyst_price_targets['current']
+
             upside = ((target_price - current_price) / current_price) * 100
             price_target_data[symbol] = round(upside, 2)
-            # revenue growth next year
-            df = stock.revenue_estimate
-            current_year = df.loc["0y", "avg"]
-            next_year = df.loc["+1y", "avg"]
-            # revenue growth next year
+
+            # Revenue estimates
+            df_rev = stock.revenue_estimate
+            current_year = df_rev.loc["0y", "avg"]
+            next_year = df_rev.loc["+1y", "avg"]
+
             if current_year and next_year:
-                growth = ((next_year - current_year) / current_year) * 100
-                #revenue_growth_data[symbol] = round(growth, 2)
+                revenue_growth = ((next_year - current_year) / current_year) * 100
+            else:
+                revenue_growth = None
+
+            # EPS estimates
+            df_eps = stock.earnings_estimate
+            current_eps = df_eps.loc["0y", "avg"]
+            next_eps = df_eps.loc["+1y", "avg"]
+
+            if current_eps and next_eps:
+                eps_growth = ((next_eps - current_eps) / current_eps) * 100
+                eps_growth = round(eps_growth, 2)
+            else:
+                eps_growth = None
+
+            if revenue_growth is not None and eps_growth is not None:
+                revenue_growth_data[symbol] = round(revenue_growth, 2) + eps_growth
             else:
                 revenue_growth_data[symbol] = None
-            # EPS growth next year
-            df_ = stock.earnings_estimate
-            current_year_ = df_.loc["0y", "avg"]
-            next_year_ = df_.loc["+1y", "avg"]
-
-            eps_growth_ = ((next_year_ - current_year_) / current_year_) * 100
-            eps_growth_ = round(eps_growth_, 2)
-
-            revenue_growth_data[symbol] = round(growth, 2) + eps_growth_
 
         except Exception as e:
             print(f"Error fetching analysis data for {symbol}: {e}")
             price_target_data[symbol] = None
             revenue_growth_data[symbol] = None
+            sectors[symbol] = "Other"
 
     return jsonify({
         "price_target_upside": price_target_data,
-        "revenue_growth_next_year": revenue_growth_data
+        "revenue_growth_next_year": revenue_growth_data,
+        "sectors": sectors   # ← NEW FIELD
     })
-
 
 @app.route("/get_summary", methods=["POST"])
 def get_summary():
