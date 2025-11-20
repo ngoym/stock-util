@@ -87,8 +87,8 @@ async function fetchData() {
     });
     const analysisData = await analysisResponse.json();
     console.log(analysisData);
-    drawPriceTargetChart(analysisData.price_target_upside);
-    drawRevenueGrowthChart(analysisData.revenue_growth_next_year);
+    drawPriceTargetChart(analysisData.price_target_upside, analysisData.sectors);
+    drawRevenueGrowthChart(analysisData.revenue_growth_next_year, analysisData.sectors);
 }
 
 function drawBarChart(data) {
@@ -134,112 +134,243 @@ function drawBarChart(data) {
     });
 }
 
-function drawPriceTargetChart(data) {
+function getColorsForSymbols(symbols, sectors) {
+    return symbols.map(sym => {
+        const sector = sectors[sym] || "Other";
+        return sectorColors[sector] || sectorColors["Other"];
+    });
+}
+
+function drawPriceTargetChart(data, sectors) {
     const canvas = document.getElementById("priceTargetChart");
-    const messageEl = document.getElementById("priceTargetMessage");
     const ctx = canvas.getContext("2d");
 
-    // Filter out nulls and sort by value (descending)
     const entries = Object.entries(data)
-        .filter(([_, v]) => v !== null)
-        .sort((a, b) => b[1] - a[1]);
-    const labels = entries.map(([k, _]) => k);
-    const values = entries.map(([_, v]) => v);
+        .filter(([_, v]) => v !== null);
 
-    // ✅ Safely destroy previous instance
+    // Safely destroy previous chart
     if (window.priceTargetChart && typeof window.priceTargetChart.destroy === "function") {
         window.priceTargetChart.destroy();
     }
 
-    if (labels.length > 0) {
-        canvas.style.display = 'block';
-        //messageEl.style.display = 'none';
-
-        window.priceTargetChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: `Price Target Upside (%)`,
-                    data: values,
-                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        title: { display: true, text: 'Upside (%)' }
-                    }
-                },
-                plugins: {
-                    title: { display: true, text: 'Analyst Price Target Upside' }
-                }
-            }
-        });
-    } else {
-        canvas.style.display = 'none';
-        messageEl.style.display = 'block';
-        messageEl.textContent = 'Analyst price target data is not available for the selected tickers.';
+    if (entries.length === 0) {
+        canvas.style.display = "none";
+        return;
     }
+
+    // --- SECTOR COLORS ---
+    const sectorColors = {
+        "Technology": "#4e79a7",
+        "Semiconductors": "#f28e2b",
+        "Communication Services": "#59a14f",
+        "Consumer Cyclical": "#e15759",
+        "Consumer Defensive": "#76b7b2",
+        "Financial Services": "#edc949",
+        "Healthcare": "#af7aa1",
+        "Energy": "#ff9da7",
+        "Industrials": "#9c755f",
+        "Real Estate": "#bab0ab",
+        "Other": "#cfcfcf"
+    };
+
+    // --- GROUP BY SECTOR ---
+    const grouped = {};
+    for (let [symbol, value] of entries) {
+        const sector = sectors[symbol] || "Other";
+        if (!grouped[sector]) grouped[sector] = [];
+        grouped[sector].push({ symbol, value });
+    }
+
+    // --- SORT WITHIN EACH SECTOR ---
+    for (let sector in grouped) {
+        grouped[sector].sort((a, b) => b.value - a.value);
+        // ↑ Descending by upside
+        // Change to: (a.value - b.value) for ascending
+    }
+
+    // Flatten into chart arrays
+    const labels = [];
+    const values = [];
+    const colors = [];
+    const borderColors = [];
+    const sectorBands = [];
+
+    let index = 0;
+    for (let [sector, stocks] of Object.entries(grouped)) {
+        sectorBands.push({
+            sector,
+            start: index,
+            end: index + stocks.length - 1
+        });
+
+        const color = sectorColors[sector] || sectorColors["Other"];
+
+        stocks.forEach(item => {
+            labels.push(item.symbol);
+            values.push(item.value);
+            colors.push(color);
+            borderColors.push(color);
+            index++;
+        });
+    }
+
+    window.priceTargetChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: "Price Target Upside (%)",
+                data: values,
+                backgroundColor: colors,
+                borderColor: borderColors,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            plugins: {
+                title: { display: true, text: "Price Target Upside (Grouped by Sector)" },
+                annotation: {
+                    annotations: sectorBands.map(band => ({
+                        type: "box",
+                        xMin: band.start - 0.5,
+                        xMax: band.end + 0.5,
+                        backgroundColor: "rgba(0,0,0,0.04)",
+                        label: {
+                            enabled: true,
+                            content: band.sector,
+                            position: "start",
+                            yAdjust: -20
+                        }
+                    }))
+                }
+            },
+            scales: {
+                y: { beginAtZero: false, title: { display: true, text: "Upside (%)" } }
+            }
+        }
+    });
 }
 
-function drawRevenueGrowthChart(data) {
+function drawRevenueGrowthChart(data, sectors) {
     const canvas = document.getElementById("revenueGrowthChart");
     const messageEl = document.getElementById("revenueGrowthMessage");
     const ctx = canvas.getContext("2d");
 
-    // Filter out nulls and sort by value (descending)
-    const entries = Object.entries(data)
-        .filter(([_, v]) => v !== null)
-        .sort((a, b) => b[1] - a[1]);
-    const labels = entries.map(([k, _]) => k);
-    const values = entries.map(([_, v]) => v);
+    // Filter out null values
+    const entries = Object.entries(data).filter(([_, v]) => v !== null);
 
+    // Safely destroy previous chart
     if (window.epsGrowthChart && typeof window.epsGrowthChart.destroy === "function") {
         window.epsGrowthChart.destroy();
     }
 
-    if (labels.length > 0) {
-        canvas.style.display = 'block';
-        //messageEl.style.display = 'none';
-
-        window.epsGrowthChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [{
-                    label: `EPS Growth + Revenue Growth Next Year (%)`,
-                    data: values,
-                    backgroundColor: 'rgba(255, 159, 64, 0.6)',
-                    borderColor: 'rgba(255, 159, 64, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        title: { display: true, text: 'Growth (%)' }
-                    }
-                },
-                plugins: {
-                    title: { display: true, text: 'Revenue Growth Next Year (est.)' }
-                }
-            }
-        });
-    } else {
+    if (entries.length === 0) {
         canvas.style.display = 'none';
         messageEl.style.display = 'block';
         messageEl.textContent = 'Revenue growth estimate data is not available for the selected tickers.';
+        return;
     }
+
+    //messageEl.style.display = "none";
+    canvas.style.display = "block";
+
+    // --- SECTOR COLORS ---
+    const sectorColors = {
+        "Technology": "#4e79a7",
+        "Semiconductors": "#f28e2b",
+        "Communication Services": "#59a14f",
+        "Consumer Cyclical": "#e15759",
+        "Consumer Defensive": "#76b7b2",
+        "Financial Services": "#edc949",
+        "Healthcare": "#af7aa1",
+        "Energy": "#ff9da7",
+        "Industrials": "#9c755f",
+        "Real Estate": "#bab0ab",
+        "Other": "#cfcfcf"
+    };
+
+    // --- GROUP BY SECTOR ---
+    const grouped = {};
+    for (let [symbol, value] of entries) {
+        const sector = sectors[symbol] || "Other";
+        if (!grouped[sector]) grouped[sector] = [];
+        grouped[sector].push({ symbol, value });
+    }
+
+    // --- SORT WITHIN EACH SECTOR (DESC) ---
+    for (let sector in grouped) {
+        grouped[sector].sort((a, b) => b.value - a.value);
+    }
+
+    // Flatten for chart
+    const labels = [];
+    const values = [];
+    const colors = [];
+    const borders = [];
+    const sectorBands = [];
+
+    let index = 0;
+    for (let [sector, stocks] of Object.entries(grouped)) {
+        const baseColor = sectorColors[sector] || sectorColors["Other"];
+
+        sectorBands.push({
+            sector,
+            start: index,
+            end: index + stocks.length - 1
+        });
+
+        stocks.forEach(item => {
+            labels.push(item.symbol);
+            values.push(item.value);
+            colors.push(baseColor);
+            borders.push(baseColor);
+            index++;
+        });
+    }
+
+    window.epsGrowthChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: "EPS Growth + Revenue Growth Next Year (%)",
+                data: values,
+                backgroundColor: colors,
+                borderColor: borders,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: { display: true, text: 'Growth (%)' }
+                }
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: "Revenue + EPS Growth Next Year (Grouped by Sector)"
+                },
+                annotation: {
+                    annotations: sectorBands.map(band => ({
+                        type: "box",
+                        xMin: band.start - 0.5,
+                        xMax: band.end + 0.5,
+                        backgroundColor: "rgba(0,0,0,0.04)",
+                        label: {
+                            enabled: true,
+                            content: band.sector,
+                            position: "start",
+                            yAdjust: -20
+                        }
+                    }))
+                }
+            }
+        }
+    });
 }
-
-
 
 async function saveTickerToDB(ticker) {
     await fetch("/save_ticker", {
